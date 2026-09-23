@@ -98,7 +98,7 @@ node .claude/plugins/job-search-automations/scripts/crawl-job-board.js "<job-boa
 node scripts/crawl-job-board.js "<job-board-url>" --json
 ```
 
-**Efficiency and Unattended Execution Rules:**
+**Efficiency and Execution Rules:**
 - Parse the JSON output directly in memory. Do not narrate intermediate parsing steps.
 - If the lightweight crawler returns listings, **do NOT run redundant WebSearch queries**. Use the extracted listings directly.
 - Only if the lightweight crawler fails or yields zero listings on custom non-ATS job boards, use your harness's native `WebSearch` / `WebFetch` as a fallback.
@@ -107,7 +107,7 @@ node scripts/crawl-job-board.js "<job-board-url>" --json
   - **Batch Search Cap**: In batch mode, limit search fallback invocations to at most 2 total searches across the entire batch.
   - **Rate Limit Detection**: Explicitly detect rate limit error responses (e.g. `"DuckDuckGo is rate-limiting this machine..."`, HTTP 429, or HTTP 202).
   - **Zero-Retry Rule**: When a rate-limit error is encountered, **do NOT retry or rephrase** the search. Immediately record company crawl status as `failed` with `error_type: "rate_limited"`, record failure details via `log_run`, and advance immediately.
-- **NEVER use interactive browser tools** (`Claude_Browser`, browser preview tabs, Puppeteer) during unattended or scheduled crawls.
+- **NEVER use interactive browser tools** (`Claude_Browser`, browser preview tabs, Puppeteer) during a crawl, whether triggered on-demand or by a scheduled routine.
 - Fast failure: If a company careers board is unreachable or yields no matching postings, log the result and advance to the next company immediately. Do not explore alternative sub-pages or retry in loops.
 
 **Upfront ATS Platform Checking & Strategy Selection (PRO-66):**

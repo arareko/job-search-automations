@@ -876,8 +876,11 @@ if [ -n "$INSTALL_TO" ] || [ -n "$DIRECTORY" ]; then
     "
     echo -e "${GREEN}[+] MCP configuration updated:${RESET} $MCP_FILE"
 
-    # Pre-grant permissions the plugin's own skills need, scoped to this workspace,
-    # so scheduled/unattended runs (crawl, assess) never stall on an approval prompt.
+    # Pre-grant only the narrow, workspace-scoped permissions the plugin's own
+    # skills need (the .job-search/ data directory and the known ATS APIs).
+    # Anything broader (whole-project writes, arbitrary URL fetch) is left to
+    # normal per-request confirmation, since runs here are on-demand, not
+    # unattended.
     SETTINGS_FILE="$PROJECT_DIR/.claude/settings.json"
     node -e "
       const fs = require('fs');
@@ -893,9 +896,6 @@ if [ -n "$INSTALL_TO" ] || [ -n "$DIRECTORY" ]; then
       }
       if (typeof cfg.permissions !== 'object' || cfg.permissions === null) cfg.permissions = {};
       if (!Array.isArray(cfg.permissions.allow)) cfg.permissions.allow = [];
-      if (typeof cfg.permissions.defaultMode === 'undefined') {
-        cfg.permissions.defaultMode = 'auto';
-      }
 
       const absCrawler = path.join(pluginDir, 'scripts', 'crawl-job-board.js');
       const absCleanup = path.join(pluginDir, 'scripts', 'cleanup-tmp.js');
@@ -975,76 +975,19 @@ if [ -n "$INSTALL_TO" ] || [ -n "$DIRECTORY" ]; then
         'mcp__job-search-db__log_run',
         'mcp__job-search-db__get_run_logs',
 
-        // Web discovery and fetch fallback tools
-        'WebSearch',
-        'WebFetch',
-        'WebFetch(*)'
+        // Web fetch scoped to the known ATS APIs the crawler actually talks to.
+        // Anything outside this list falls through to a normal per-request
+        // confirmation instead of being pre-approved.
+        'WebFetch(domain:boards-api.greenhouse.io)',
+        'WebFetch(domain:api.lever.co)',
+        'WebFetch(domain:api.ashbyhq.com)'
       ];
       for (const g of grants) {
         if (!cfg.permissions.allow.includes(g)) cfg.permissions.allow.push(g);
       }
       fs.writeFileSync(settingsFile, JSON.stringify(cfg, null, 2) + '\n');
-
-      // Reconcile existing Claude Desktop / Code scheduled routines to "auto"
-      try {
-        const os = require('os');
-        const candidates = [];
-        if (process.platform === 'darwin') {
-          const macBase = path.join(os.homedir(), 'Library', 'Application Support', 'Claude');
-          candidates.push(path.join(macBase, 'claude-code-sessions'));
-          candidates.push(path.join(macBase, 'local-agent-mode-sessions'));
-        } else if (process.platform === 'win32') {
-          const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-          const winBase = path.join(appData, 'Claude');
-          candidates.push(path.join(winBase, 'claude-code-sessions'));
-          candidates.push(path.join(winBase, 'local-agent-mode-sessions'));
-        } else {
-          const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-          const linuxBase = path.join(xdgConfig, 'Claude');
-          candidates.push(path.join(linuxBase, 'claude-code-sessions'));
-          candidates.push(path.join(linuxBase, 'local-agent-mode-sessions'));
-        }
-        let patchedCount = 0;
-        for (const baseDir of candidates) {
-          if (!fs.existsSync(baseDir)) continue;
-          let accountDirs = [];
-          try { accountDirs = fs.readdirSync(baseDir); } catch { continue; }
-          for (const acc of accountDirs) {
-            const accPath = path.join(baseDir, acc);
-            try { if (!fs.statSync(accPath).isDirectory()) continue; } catch { continue; }
-            let orgDirs = [];
-            try { orgDirs = fs.readdirSync(accPath); } catch { continue; }
-            for (const org of orgDirs) {
-              const orgPath = path.join(accPath, org);
-              try { if (!fs.statSync(orgPath).isDirectory()) continue; } catch { continue; }
-              const tasksFile = path.join(orgPath, 'scheduled-tasks.json');
-              if (fs.existsSync(tasksFile)) {
-                try {
-                  const data = JSON.parse(fs.readFileSync(tasksFile, 'utf-8'));
-                  let modified = false;
-                  if (Array.isArray(data.scheduledTasks)) {
-                    for (const task of data.scheduledTasks) {
-                      const isJobSearch = (typeof task.id === 'string' && task.id.startsWith('job-search-')) &&
-                                          (typeof task.cwd === 'string' && path.resolve(task.cwd) === path.resolve(projectDir));
-                      if (isJobSearch && task.permissionMode !== 'auto') {
-                        task.permissionMode = 'auto';
-                        modified = true;
-                        patchedCount++;
-                      }
-                    }
-                  }
-                  if (modified) fs.writeFileSync(tasksFile, JSON.stringify(data, null, 2) + '\n');
-                } catch {}
-              }
-            }
-          }
-        }
-        if (patchedCount > 0) {
-          console.log('[+] Configured ' + patchedCount + ' scheduled routine(s) for Auto approval (unattended mode).');
-        }
-      } catch {}
     "
-    echo -e "${GREEN}[+] Permissions pre-granted (Auto approval mode):${RESET} $SETTINGS_FILE"
+    echo -e "${GREEN}[+] Permissions scoped to .job-search/ workspace and known ATS APIs:${RESET} $SETTINGS_FILE"
 
     # Configure project .claude/launch.json for web preview
     LAUNCH_FILE="$PROJECT_DIR/.claude/launch.json"
@@ -1321,7 +1264,7 @@ if [ "$IS_CLAUDE_TARGET" = true ]; then
     echo -e "                     ${GREEN}✓${RESET} Crawler Script:    ${CYAN}node .claude/plugins/job-search-automations/scripts/crawl-job-board.js:*${RESET}"
     echo -e "                     ${GREEN}✓${RESET} Ephemeral Temp:    ${CYAN}node .claude/plugins/job-search-automations/scripts/cleanup-tmp.js:*${RESET} (cleanup-tmp helper)"
     echo -e "                     ${GREEN}✓${RESET} MCP Database:      ${CYAN}Operational tools pre-approved (least privilege)${RESET}"
-    echo -e "                     ${GREEN}✓${RESET} Web Access:        ${CYAN}WebSearch${RESET}, ${CYAN}WebFetch${RESET} (fallback discovery)"
+    echo -e "                     ${GREEN}✓${RESET} Web Access:        ${CYAN}WebFetch${RESET} scoped to known ATS domains only — everything else still asks for confirmation"
   fi
 fi
 if [ "$IS_COPILOT_TARGET" = true ] && [ -n "$VSCODE_MCP_FILE" ]; then
@@ -1336,26 +1279,11 @@ echo ""
 echo -e "To update your resume in the future, run:"
 echo -e "  ${BOLD}./setup.sh --update-resume <path-to-new-resume.pdf> --directory \"$PROJECT_DIR\"${RESET}"
 echo ""
-echo -e "${CYAN}${BOLD}Recurring Pipeline Runs:${RESET}"
-echo "  Use the /schedule command to run the lead-gen orchestrator automatically:"
-echo "  /schedule CronExpression=\"0 9 * * 1-5\" Prompt=\"Run job-search-lead-gen for a batch of 3 companies in directory '$PROJECT_DIR'. Complete within 50 messages.\""
-echo ""
-echo -e "  ${BOLD}Model Class Recommendation:${RESET}"
-if [ "$IS_CLAUDE_TARGET" = true ]; then
-  echo "    • Claude Code / Desktop: Recommend Sonnet-class (cost-effective, balanced)"
-fi
-if [ "$IS_CODEX_TARGET" = true ]; then
-  echo "    • OpenAI / Codex:        Recommend Luna-class (fast, low token cost)"
-fi
-if [ "$IS_COPILOT_TARGET" = true ]; then
-  echo "    • GitHub Copilot:        Recommend Claude 3.5 Sonnet or GPT-4o-mini"
-fi
-if [ "$IS_CLAUDE_TARGET" = false ] && [ "$IS_CODEX_TARGET" = false ] && [ "$IS_COPILOT_TARGET" = false ]; then
-  echo "    • OpenAI / Codex:        Recommend Luna-class (fast, low token cost)"
-  echo "    • Claude Code / Desktop: Recommend Sonnet-class (cost-effective, balanced)"
-  echo "    • Standard Harnesses:    Recommend balanced tier models"
-fi
-echo "    (Avoid defaulting unattended recurring routines to expensive flagship models like Opus)"
+echo -e "${CYAN}${BOLD}Ready to use, on demand:${RESET}"
+echo "  Ask your assistant to run a search, e.g. \"run company-search\" or \"run job-search-lead-gen for <company>\"."
+echo "  Recurring/scheduled runs (via /schedule or harness routine settings) are optional — see"
+echo "  the README or installation-steps.md if you want to set that up, including the Auto vs."
+echo "  Manual approval tradeoff for scheduled routines."
 echo ""
 if [ "$IS_COPILOT_TARGET" = true ]; then
   echo -e "Please reload your VS Code window (Cmd+Shift+P -> 'Developer: Reload Window') for Copilot to load skills and MCP tools."

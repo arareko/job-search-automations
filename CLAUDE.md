@@ -6,10 +6,11 @@ This repository provides an automated, skill-based job search pipeline with loca
 
 When a user in Claude Desktop (Claude Code mode) or Claude Code CLI asks to install, set up, or get started with Job Search Automation:
 
-1. **Keep it simple and frictionless**:
-   - Do **NOT** debate marketplace mechanisms vs. local scripts.
+1. **Keep it simple, but don't suppress relevant caveats**:
    - Do **NOT** run `git clone`. The repository must NEVER be cloned into the user's workspace.
-   - Do **NOT** warn about ephemeral cloud sandboxes. Claude Code connects directly to the user's workspace, and data persists permanently in `<selected-directory>/.job-search/` (containing `job-search.sqlite`, `resume.pdf`, and `config.json`).
+   - If you're running in an ephemeral or sandboxed environment (e.g. a container that
+     isn't bind-mounted to persistent storage), say so — `<selected-directory>/.job-search/`
+     only persists if the directory itself persists. Don't assume it's permanent.
    - Do **NOT** ask about Neon database strings or storage modes unless the user explicitly requests Neon cloud mode. Local SQLite mode is the default zero-dependency mode.
    - Do **NOT** attempt to install Playwright or Chromium. The crawler runs zero-browser lightweight fetch with ATS APIs.
    - For universal, multi-harness installation flags and details, refer to [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md).
@@ -32,14 +33,14 @@ When a user in Claude Desktop (Claude Code mode) or Claude Code CLI asks to inst
      - Pre-compile packages and install the self-contained plugin into `<selected-directory>/.claude/plugins/job-search-automations/`
      - Configure `<selected-directory>/.mcp.json` to launch the database MCP server via plugin-relative path
      - Configure `<selected-directory>/.claude/launch.json` for web preview of the UI dashboard
-     - Pre-grant permissions in `<selected-directory>/.claude/settings.json` for unattended crawler runs
+     - Grant scoped permissions in `<selected-directory>/.claude/settings.json`, limited to the `.job-search/` workspace and the known ATS APIs the crawler uses — everything else still prompts for confirmation
      - Scaffold the `<selected-directory>/.job-search/` workspace with SQLite database, configuration, and default scoring rubric
 
 4. **Conversational Next Step**:
    - Once setup reports completion, ask the user:
      > *"Your job search pipeline is ready! What job titles, locations, or target companies would you like to start with?"*
-   - Save their preferences and offer to run their first search using `company-search` or `job-search-lead-gen`.
-   - If asked to set up routines or recurring schedules, follow the **Canonical Routines** defined below and in [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md). **NEVER create a "Weekly digest" routine.**
+   - Save their preferences and offer to run their first search **on demand** using `company-search` or `job-search-lead-gen` — this is the default, primary way to use the pipeline.
+   - Only if the user explicitly asks to automate this on a recurring schedule, offer the **Canonical Routines** defined below and in [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md), and be upfront that they run unattended. **NEVER create a "Weekly digest" routine.**
 
 ## Runtime Architecture
 
@@ -77,7 +78,7 @@ In a user's project workspace after installation, the source repo and git histor
   - Plugin manifests (`plugin.json`, `mcp.json`, `CLAUDE.md`) and `schema.sql`
 - `<selected-directory>/.mcp.json`: MCP server configuration pointing to `./.claude/plugins/job-search-automations/packages/job-search-db/scripts/start.js`
 - `<selected-directory>/.claude/launch.json`: Claude Desktop web preview configuration for the UI dashboard
-- `<selected-directory>/.claude/settings.json`: Pre-granted permissions for unattended runs
+- `<selected-directory>/.claude/settings.json`: Scoped permissions for on-demand runs (`.job-search/` workspace + known ATS APIs only)
 
 ### Mandatory Agent Rules
 
@@ -100,17 +101,17 @@ In a user's project workspace after installation, the source repo and git histor
    - The crawler `scripts/crawl-job-board.js` outputs JSON directly to stdout (`node ... --json`). Agents should parse stdout JSON directly in memory without writing intermediate files to disk whenever possible.
    - If intermediate crawl data must be staged, write strictly to `<selected-directory>/.job-search/tmp/<company-slug>-crawl.json`.
    - **NEVER** create directories or write files in the project workspace or repo root (e.g. `./tmp/` or `./<company>/`). Never create nested subdirectories inside `.job-search/tmp/`. The flat `.job-search/tmp/` directory is pre-created during setup.
-   - Pre-granted permissions in `.claude/settings.json` explicitly cover crawler script execution (`node ... crawl-job-board.js:*`), safe ephemeral directory cleanup via helper script (`node ... cleanup-tmp.js:*`), workspace read access (`Read(<selected-directory>/**)`), scoped database and tmp write access (`Write(<selected-directory>/.job-search/**)`), operational `mcp__job-search-db__*` tools, and web access fallback (`WebSearch`, `WebFetch`) to guarantee scheduled unattended runs without prompts.
+   - Pre-granted permissions in `.claude/settings.json` cover crawler script execution (`node ... crawl-job-board.js:*`), safe ephemeral directory cleanup via helper script (`node ... cleanup-tmp.js:*`), workspace read access (`Read(<selected-directory>/**)`), scoped database and tmp write access (`Write(<selected-directory>/.job-search/**)`), least-privilege operational `mcp__job-search-db__*` tools (explicitly enumerated, no wildcard), and `WebFetch` scoped to the known ATS API domains. Anything outside that scope (e.g. `WebSearch`, or fetching an arbitrary URL) still requires normal per-request confirmation — this plugin is designed for on-demand runs, not unattended ones.
    - Both `job-search-crawl` and `job-search-assess` must clean up any temporary files in `.job-search/tmp/` upon run completion (using `node .claude/plugins/job-search-automations/scripts/cleanup-tmp.js` or native Claude file tools). Scored candidates and queue entries are committed to the SQLite database via MCP tools—never left as files on disk.
-8. **Scheduled & Unattended Execution Guidelines (Cost & Scoping Control)**:
-   - Scheduled tasks in Claude Code run unattended without user intervention. Because Claude scheduled tasks lack native message or token caps, execution bounds MUST be strictly enforced via prompt instructions, bounded batching, and fast-fail logic.
-   - **Message Budget**: Scheduled task prompts must state an explicit message budget: *"Complete within 40–50 messages. If more companies or pending postings remain, stop and let the next scheduled run continue."*
+8. **Bounded Batch Execution Guidelines (Cost & Scoping Control)**:
+   - These bounds apply whether a run is triggered on-demand by a human or (only if the user has explicitly opted into it) by a scheduled task. Scheduled tasks in particular run without further intervention once started, so execution bounds MUST be strictly enforced via prompt instructions, bounded batching, and fast-fail logic.
+   - **Message Budget**: State an explicit message budget for the batch: *"Complete within 40–50 messages. If more companies or pending postings remain, stop rather than continuing indefinitely."*
    - **Batch Limits**:
-     - Crawl: Process at most 2–3 companies per scheduled run (via `get_batch({ limit: 3 })`).
-     - Assess: Process at most 5 pending postings per scheduled run (via `get_pending_queue`).
-     - Company Discovery (`company-search`): Add at most 3–5 newly qualified companies per scheduled run.
-     - Title Discovery (`title-discovery`): Add at most 1–3 newly validated title patterns per scheduled run.
-   - **Zero Browser Automation & ATS Fallback**: Never invoke interactive browser tools (`Claude_Browser`, browser preview tabs, Puppeteer) during unattended runs. Stick strictly to lightweight HTTP / ATS APIs and simple `WebFetch`. For Ashby or other ATS SPAs, use the crawler in posting mode (`crawl-job-board.js --posting`) which resolves complete job text via public APIs.
+     - Crawl: Process at most 2–3 companies per run (via `get_batch({ limit: 3 })`).
+     - Assess: Process at most 5 pending postings per run (via `get_pending_queue`).
+     - Company Discovery (`company-search`): Add at most 3–5 newly qualified companies per run.
+     - Title Discovery (`title-discovery`): Add at most 1–3 newly validated title patterns per run.
+   - **Zero Browser Automation & ATS Fallback**: Never invoke interactive browser tools (`Claude_Browser`, browser preview tabs, Puppeteer) during a bounded batch run. Stick strictly to lightweight HTTP / ATS APIs and simple `WebFetch`. For Ashby or other ATS SPAs, use the crawler in posting mode (`crawl-job-board.js --posting`) which resolves complete job text via public APIs.
      - **Known ATS Public APIs**:
        - **Ashby**: Prefer unauthenticated public board API `https://api.ashbyhq.com/posting-api/job-board/<boardSlug>`. For individual postings, query the board endpoint or use `crawl-job-board.js "<url>" --posting --json`. **CRITICAL**: Never call `https://api.ashbyhq.com/posting-api/job/{id}` directly; that endpoint requires API authentication and will fail with `HTTP 401 Unauthorized`.
        - **Greenhouse**: Use public board API `https://boards-api.greenhouse.io/v1/boards/<boardToken>/jobs` and posting API `https://boards-api.greenhouse.io/v1/boards/<boardToken>/jobs/<jobId>`.
@@ -146,7 +147,7 @@ In a user's project workspace after installation, the source repo and git histor
      - **Batch Search Cap**: In unattended/batch runs, limit search fallback invocations to at most 2 total searches across the entire batch.
      - **Zero-Retry on Rate Limiting**: If DuckDuckGo or the search provider returns a rate limit message (`"DuckDuckGo is rate-limiting this machine..."`, HTTP 429, or HTTP 202), immediately mark the company as `failed` with `error_type: "rate_limited"`. **NEVER retry or rephrase the query**.
      - **Batch Circuit Breaker**: Once a rate limit occurs, immediately disable search fallback for all subsequent companies in the batch and continue using direct crawler only.
-   - **Strict Anti-Hallucination Guardrail (No Weekly Digest)**: There is **NO Weekly Digest routine** in this repository. Agents must never create, suggest, or schedule a weekly digest routine. Only configure the 4 canonical routines documented in [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md).
+   - **Strict Anti-Hallucination Guardrail (No Weekly Digest)**: There is **NO Weekly Digest routine** in this repository. Agents must never create, suggest, or schedule a weekly digest routine. Only configure the 4 canonical routines documented in [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md), and only when the user asks for scheduling.
 9. **Candidate Status Ownership & Human-in-the-Loop Disposition**:
    - Automated assessment and crawler agents must **never** unilaterally set candidate status to `not_pursuing`, `closed`, `rejected`, `applied`, or any other disposition status.
    - When recording candidates via `add_candidate`, always record with `status: "new"`.
@@ -175,9 +176,15 @@ The local Web UI dashboard provides a visual interface for reviewing scored cand
 - **`title-discovery`**: Discovers target job titles and skills based on resume analysis.
 - **`pipeline-diagram`**: Generates Mermaid diagrams of the pipeline state.
 
-## Canonical Routines & Recurring Scheduling
+## Canonical Routines & Recurring Scheduling (opt-in only)
 
-When asked to configure routines or recurring background jobs, configure ONLY the four canonical routines below. See [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md) for full prompt templates, budgets, and cloud management steps.
+The default, primary way to use this pipeline is on-demand: the user asks for a search, crawl, or
+assessment, and an agent runs it under normal per-action confirmation. Recurring/scheduled
+routines are an **optional feature** the user may ask for — do not offer or configure them
+proactively.
+
+If, and only if, the user explicitly asks to automate this on a schedule, configure ONLY the four
+canonical routines below. See [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md) for full prompt templates, budgets, and cloud management steps.
 
 1. **Daily Company Search** (`company-search`):
    - Schedule: Daily 8:00 PM (`0 20 * * *`)
@@ -193,8 +200,14 @@ When asked to configure routines or recurring background jobs, configure ONLY th
    - Bounds: Batch 5 pending postings (`get_pending_queue`); budget 40–50 messages.
 
 > [!IMPORTANT]
-> **Mandatory Auto Approval for Routines**:
-> Scheduled routines run autonomously without human supervision. When creating, configuring, or updating scheduled tasks or routines via MCP (`mcp__scheduled-tasks__create_scheduled_task`, `update_scheduled_task`, `/schedule`, or editing `scheduled-tasks.json`), always set or ensure `permissionMode: "auto"`. **NEVER leave routines set to "Manual" approval**, as unattended runs will stall on permission prompts.
+> **Approval mode for routines is the user's call, not the agent's**:
+> Scheduled routines run without further human supervision once started, so whether they run
+> under `permissionMode: "auto"` or "Manual" is a real trust decision the user should make
+> knowingly — explain the tradeoff (Manual will stall on permission prompts and effectively won't
+> run unattended; Auto means the routine acts without per-step confirmation) and let them choose.
+> Never silently set or change `permissionMode` on a scheduled task the user didn't ask you to
+> change, and never modify `scheduled-tasks.json` or any Claude configuration outside the current
+> project on the user's behalf.
 
 > [!TIP]
 > **Recommended Model Class for Routines**:

@@ -289,7 +289,7 @@ assert_equals "VALID" "$LAUNCH_JSON_VALID" ".claude/launch.json contains job-sea
 
 assert_file_exists "$PROJECT_DIR/.claude/settings.json" ".claude/settings.json created with permissions"
 SETTINGS_CONTENT="$(cat "$PROJECT_DIR/.claude/settings.json")"
-assert_contains "$SETTINGS_CONTENT" '"defaultMode": "auto"' ".claude/settings.json contains permissions.defaultMode = auto"
+assert_not_contains "$SETTINGS_CONTENT" '"defaultMode": "auto"' ".claude/settings.json does not force permissions.defaultMode = auto"
 assert_contains "$SETTINGS_CONTENT" "cleanup-tmp.js:*" ".claude/settings.json contains cleanup-tmp execution grant (PRO-55)"
 assert_not_contains "$SETTINGS_CONTENT" "Bash(mkdir -p .job-search/tmp*)" ".claude/settings.json omits wildcard mkdir permission (PRO-55)"
 assert_not_contains "$SETTINGS_CONTENT" "Bash(rm -rf ./.job-search/tmp*)" ".claude/settings.json omits wildcard rm -rf permission (PRO-55)"
@@ -302,7 +302,7 @@ assert_contains "$SETTINGS_CONTENT" "scripts/crawl-job-board.js:*" ".claude/sett
 assert_not_contains "$SETTINGS_CONTENT" "Bash(mkdir -p $PROJECT_DIR/.job-search/tmp*)" ".claude/settings.json omits absolute tmp mkdir grant (PRO-55)"
 assert_not_contains "$SETTINGS_CONTENT" "Bash(rm -rf $PROJECT_DIR/.job-search/tmp*)" ".claude/settings.json omits absolute tmp rm grant (PRO-55)"
 assert_contains "$SETTINGS_CONTENT" "Read($PROJECT_DIR/**)" ".claude/settings.json contains scoped workspace Read grant (PRO-34)"
-assert_not_contains "$SETTINGS_CONTENT" "Write($PROJECT_DIR/**)" ".claude/settings.json omits overbroad workspace Write grant (PRO-55)"
+assert_not_contains "$SETTINGS_CONTENT" "Write($PROJECT_DIR/**)" ".claude/settings.json does not grant whole-project Write (sandbox hardening)"
 assert_contains "$SETTINGS_CONTENT" "Read($PROJECT_DIR/.job-search/**)" ".claude/settings.json contains scoped .job-search Read grant (PRO-34)"
 assert_contains "$SETTINGS_CONTENT" "Write($PROJECT_DIR/.job-search/**)" ".claude/settings.json contains scoped .job-search Write grant (PRO-34)"
 assert_not_contains "$SETTINGS_CONTENT" "mcp__job-search-db__*" ".claude/settings.json omits overbroad mcp wildcard grant (PRO-55)"
@@ -310,10 +310,11 @@ assert_not_contains "$SETTINGS_CONTENT" "mcp__job-search-db__delete_rubric_dimen
 assert_contains "$SETTINGS_CONTENT" "mcp__job-search-db__get_pending_queue" ".claude/settings.json contains mcp queue grant (PRO-34)"
 assert_contains "$SETTINGS_CONTENT" "mcp__job-search-db__list_companies" ".claude/settings.json contains mcp companies grant (PRO-34)"
 assert_contains "$SETTINGS_CONTENT" "mcp__job-search-db__select_workspace" ".claude/settings.json contains mcp select_workspace grant (PRO-55)"
-assert_contains "$SETTINGS_CONTENT" "WebSearch" ".claude/settings.json contains WebSearch grant (PRO-34)"
-assert_contains "$SETTINGS_CONTENT" "WebFetch" ".claude/settings.json contains WebFetch grant (PRO-34)"
+assert_not_contains "$SETTINGS_CONTENT" "WebSearch" ".claude/settings.json does not pre-grant unrestricted WebSearch (sandbox hardening)"
+assert_not_contains "$SETTINGS_CONTENT" "WebFetch(*)" ".claude/settings.json does not pre-grant unrestricted WebFetch(*) (sandbox hardening)"
+assert_contains "$SETTINGS_CONTENT" "WebFetch(domain:boards-api.greenhouse.io)" ".claude/settings.json contains scoped ATS WebFetch grant (sandbox hardening)"
 
-# PRO-34 post-install transparent permissions summary assertions
+# Post-install transparent permissions summary assertions
 assert_contains "$SETUP_DIR_OUT" "Permissions:" "setup.sh outputs Permissions in summary (PRO-34)"
 assert_contains "$SETUP_DIR_OUT" "Scoped Read/Write:" "setup.sh details Scoped Read/Write grant in summary (PRO-34)"
 assert_contains "$SETUP_DIR_OUT" "Crawler Script:" "setup.sh details Crawler Script grant in summary (PRO-34)"
@@ -375,7 +376,7 @@ SETUP_CODEX_SH_OUT="$("$ROOT_DIR/setup.sh" --directory "$CODEX_SH_DIR" --resume 
 assert_contains "$SETUP_CODEX_SH_OUT" "Setup Complete!" "setup.sh --codex reported completion"
 assert_contains "$SETUP_CODEX_SH_OUT" "Codex Config:" "setup.sh displays Codex config in summary"
 assert_contains "$SETUP_CODEX_SH_OUT" ".codex/config.toml" "setup.sh summary reports .codex/config.toml"
-assert_contains "$SETUP_CODEX_SH_OUT" "Luna-class" "setup.sh summary recommends Luna-class models"
+assert_contains "$SETUP_CODEX_SH_OUT" "on demand" "setup.sh summary presents on-demand usage as the default"
 assert_contains "$SETUP_CODEX_SH_OUT" "/mcp" "setup.sh summary directs inspecting /mcp"
 
 # Ensure Claude mentions not in Codex next steps

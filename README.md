@@ -63,7 +63,7 @@ npx -y github:joshyim/job-search-automations setup --codex
 ```
 
 - **Standard & Copilot Scaffolding**: Configures universal `.mcp.json` (and `.vscode/mcp.json` for Copilot), installs the 6 declarative skills into `.agents/skills/`, and creates `AGENTS.md`.
-- **Claude Scaffolding**: Installs plugin to `.claude/plugins/job-search-automations/`, configures `.mcp.json` and `.claude/launch.json`, and pre-grants routine permissions in `.claude/settings.json`.
+- **Claude Scaffolding**: Installs plugin to `.claude/plugins/job-search-automations/`, configures `.mcp.json` and `.claude/launch.json`, and grants permissions in `.claude/settings.json` scoped to the `.job-search/` workspace and known ATS APIs — not a blanket auto-approval.
 - **Codex Scaffolding**: Configures project-scoped MCP in `.codex/config.toml` (`default_tools_approval_mode = "writes"`), installs skills into `.agents/skills/`, and creates `AGENTS.md`.
 - **Private Data Scaffolding**: Scaffolds your private workspace in `.job-search/` with a local SQLite database (`job-search.sqlite`), schema, and default scoring rubric.
 
@@ -85,24 +85,7 @@ After installation completes, reload your agent harness so it mounts the new MCP
 
 ---
 
-### Step 3: Activate Routines & Configure Auto Permissions
-Open your harness's routine manager (Claude Desktop sidebar under **Scheduled**, `claude.ai/code/routines`, or using `/schedule`), activate the 4 canonical routines, and ensure they have **Auto** approval permissions so they run unattended without stalling:
-
-1. **Daily Company Search** (`company-search` at 8:00 PM)
-2. **Daily Job Title Search** (`title-discovery` at 9:00 PM)
-3. **Daily Job Crawl** (`job-search-crawl` at 6:00 AM)
-4. **Daily Job Evaluation** (`job-search-assess` at 7:00 AM)
-
-*Model Recommendation*: Configure routines with **Sonnet-class** (Claude Code / Desktop), **Luna-class** (OpenAI / Codex), or **GPT-4o-mini / balanced tier** (GitHub Copilot) models for optimal cost and performance.
-
-> **Prompt for your AI Assistant:**
-> ```text
-> Help me activate the 4 canonical job search routines. Make sure they are scheduled with Auto approval mode and use Sonnet-class or Luna-class models so they run unattended without stalling.
-> ```
-
----
-
-### Step 4: Complete Initial Profile Setup & Intake
+### Step 3: Complete Initial Profile Setup & Intake
 Finish setup by providing your resume and having your AI assistant guide you through your initial preferences:
 
 - **Resume**: Provide the file path to your resume PDF or copy it to `.job-search/resume.pdf`.
@@ -118,16 +101,47 @@ Finish setup by providing your resume and having your AI assistant guide you thr
 
 ---
 
-### Step 5: Manually Run the Pipeline & Verify Settings
-Before letting recurring routines run unattended overnight, perform a manual test run in chat to verify that the crawler, scoring engine, and database communicate cleanly:
+### Step 4: Run the Pipeline On Demand & Verify Settings
+This is how the pipeline is meant to be used day to day — you ask, the agent runs it. Try a run
+in chat to verify that the crawler, scoring engine, and database communicate cleanly:
 
-- **Permission Settings (Claude Code)**: Change your permission level to **auto** (run with auto approvals or configure `permissionMode: "auto"`) so Claude Code can execute the crawler script and database operations without halting on interactive confirmation prompts.
+- **Permission Settings (Claude Code)**: Setup already scoped permissions to the `.job-search/`
+  workspace and the known ATS APIs, so the crawler script and database operations run without
+  repeated prompts for those specific operations. Everything outside that scope still asks for
+  confirmation as normal — that's intentional, not a bug to work around.
 - **Permission Settings (GitHub Copilot / Codex)**: Ensure tool execution permissions allow read and write access for the `job-search-db` MCP server and crawler.
 - **Verify Settings**: Check that target companies are registered, positive/negative title filters are saved, and the scoring rubric reflects your priorities.
 
 > **Prompt for your AI Assistant:**
 > ```text
 > Run job-search-lead-gen for 1 target company to test the pipeline end-to-end and confirm our settings.
+> ```
+
+---
+
+### Step 5 (Optional): Automate with Recurring Routines
+Everything above works as a plain on-demand run — nothing further is required. If you specifically
+want this to run unattended on a schedule instead, open your harness's routine manager (Claude
+Desktop sidebar under **Scheduled**, `claude.ai/code/routines`, or using `/schedule`) and activate
+the 4 canonical routines:
+
+1. **Daily Company Search** (`company-search` at 8:00 PM)
+2. **Daily Job Title Search** (`title-discovery` at 9:00 PM)
+3. **Daily Job Crawl** (`job-search-crawl` at 6:00 AM)
+4. **Daily Job Evaluation** (`job-search-assess` at 7:00 AM)
+
+*Model Recommendation*: Configure routines with **Sonnet-class** (Claude Code / Desktop), **Luna-class** (OpenAI / Codex), or **GPT-4o-mini / balanced tier** (GitHub Copilot) models for optimal cost and performance.
+
+**A note on Auto vs. Manual approval**: scheduling only actually runs unattended if you set the
+routine's approval mode to **Auto**, which lets it act without per-step confirmation. That's a
+real tradeoff, not a formality — decide deliberately whether you want that for this workload.
+Leaving it on **Manual** means each step will prompt you, which in practice defeats the point of
+scheduling it. Your AI assistant should explain this rather than silently choosing Auto for you.
+
+> **Prompt for your AI Assistant:**
+> ```text
+> I'd like to automate the 4 canonical job search routines on a schedule. Walk me through the
+> Auto vs. Manual approval tradeoff and set them up with whichever mode I choose.
 > ```
 
 ---
@@ -300,9 +314,14 @@ Included inside the plugin package per the Agent Plugins specification:
 
 ---
 
-### Recurring Pipeline Scheduling (via `/schedule`)
+### Recurring Pipeline Scheduling (via `/schedule`) — optional
 
-Automate your job search on a recurring schedule using your agent harness's scheduling mechanism (e.g. Claude Code's `/schedule` command or cloud routines). Scheduled tasks run unattended, so prompts should include an explicit message budget and batch limit.
+This entire pipeline works fine run purely on-demand; nothing here is required. If you specifically
+want to automate it on a recurring schedule using your agent harness's scheduling mechanism (e.g.
+Claude Code's `/schedule` command or cloud routines), the templates below are a starting point.
+Scheduled tasks run unattended once triggered, so prompts should include an explicit message
+budget and batch limit, and you should deliberately choose Auto vs. Manual approval mode for the
+routine rather than defaulting to Auto.
 
 > [!NOTE]
 > For complete routine configurations, prompt templates, and cloud routine management steps, see [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md). Note: there is **no Weekly Digest routine** in this repository.

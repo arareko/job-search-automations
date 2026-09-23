@@ -153,70 +153,6 @@ function ensurePackagesBuilt() {
   }
 }
 
-function reconcileClaudeScheduledRoutines(projectDir) {
-  let patchedCount = 0;
-  try {
-    const candidates = [];
-    if (process.platform === 'darwin') {
-      const macBase = path.join(os.homedir(), 'Library', 'Application Support', 'Claude');
-      candidates.push(path.join(macBase, 'claude-code-sessions'));
-      candidates.push(path.join(macBase, 'local-agent-mode-sessions'));
-    } else if (process.platform === 'win32') {
-      const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-      const winBase = path.join(appData, 'Claude');
-      candidates.push(path.join(winBase, 'claude-code-sessions'));
-      candidates.push(path.join(winBase, 'local-agent-mode-sessions'));
-    } else {
-      const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-      const linuxBase = path.join(xdgConfig, 'Claude');
-      candidates.push(path.join(linuxBase, 'claude-code-sessions'));
-      candidates.push(path.join(linuxBase, 'local-agent-mode-sessions'));
-    }
-
-    for (const baseDir of candidates) {
-      if (!fs.existsSync(baseDir)) continue;
-      let accountDirs = [];
-      try { accountDirs = fs.readdirSync(baseDir); } catch { continue; }
-      for (const acc of accountDirs) {
-        const accPath = path.join(baseDir, acc);
-        try {
-          if (!fs.statSync(accPath).isDirectory()) continue;
-        } catch { continue; }
-        let orgDirs = [];
-        try { orgDirs = fs.readdirSync(accPath); } catch { continue; }
-        for (const org of orgDirs) {
-          const orgPath = path.join(accPath, org);
-          try {
-            if (!fs.statSync(orgPath).isDirectory()) continue;
-          } catch { continue; }
-          const tasksFile = path.join(orgPath, 'scheduled-tasks.json');
-          if (fs.existsSync(tasksFile)) {
-            try {
-              const data = JSON.parse(fs.readFileSync(tasksFile, 'utf-8'));
-              let modified = false;
-              if (Array.isArray(data.scheduledTasks)) {
-                for (const task of data.scheduledTasks) {
-                  const isJobSearch = (typeof task.id === 'string' && task.id.startsWith('job-search-')) &&
-                                      (typeof task.cwd === 'string' && path.resolve(task.cwd) === path.resolve(projectDir));
-                  if (isJobSearch && task.permissionMode !== 'auto') {
-                    task.permissionMode = 'auto';
-                    modified = true;
-                    patchedCount++;
-                  }
-                }
-              }
-              if (modified) {
-                fs.writeFileSync(tasksFile, JSON.stringify(data, null, 2) + '\n');
-              }
-            } catch {}
-          }
-        }
-      }
-    }
-  } catch {}
-  return patchedCount;
-}
-
 function detectHarness(projectDir) {
   const isCodexEnv = Boolean(
     process.env.CODEX ||
@@ -558,9 +494,6 @@ async function handleSetup(args) {
     }
     if (typeof settingsConfig.permissions !== 'object' || settingsConfig.permissions === null) settingsConfig.permissions = {};
     if (!Array.isArray(settingsConfig.permissions.allow)) settingsConfig.permissions.allow = [];
-    if (typeof settingsConfig.permissions.defaultMode === 'undefined') {
-      settingsConfig.permissions.defaultMode = 'auto';
-    }
 
     const absCrawler = path.join(pluginDir, 'scripts', 'crawl-job-board.js');
     const absCleanup = path.join(pluginDir, 'scripts', 'cleanup-tmp.js');
@@ -640,22 +573,18 @@ async function handleSetup(args) {
       'mcp__job-search-db__log_run',
       'mcp__job-search-db__get_run_logs',
 
-      // Web discovery and fetch fallback tools
-      'WebSearch',
-      'WebFetch',
-      'WebFetch(*)',
+      // Web fetch scoped to the known ATS APIs the crawler actually talks to.
+      // Anything outside this list falls through to a normal per-request
+      // confirmation instead of being pre-approved.
+      'WebFetch(domain:boards-api.greenhouse.io)',
+      'WebFetch(domain:api.lever.co)',
+      'WebFetch(domain:api.ashbyhq.com)',
     ];
     for (const g of grants) {
       if (!settingsConfig.permissions.allow.includes(g)) settingsConfig.permissions.allow.push(g);
     }
     fs.writeFileSync(settingsFilePath, JSON.stringify(settingsConfig, null, 2) + '\n');
-    console.log(`${GREEN}[+] Permissions pre-granted (Auto approval mode):${RESET} ${settingsFilePath}`);
-
-    // 3.4 Reconcile any existing Claude Desktop / Code scheduled routines to "auto" permission mode
-    const patchedRoutines = reconcileClaudeScheduledRoutines(projectDir);
-    if (patchedRoutines > 0) {
-      console.log(`${GREEN}[+] Configured ${patchedRoutines} scheduled routine(s) for Auto approval (unattended mode).${RESET}`);
-    }
+    console.log(`${GREEN}[+] Permissions scoped to .job-search/ workspace and known ATS APIs:${RESET} ${settingsFilePath}`);
   }
 
   if (isCodexTarget) {
@@ -1025,7 +954,7 @@ async function handleSetup(args) {
       console.log(`                     ${GREEN}✓${RESET} Crawler Script:    ${CYAN}node .claude/plugins/job-search-automations/scripts/crawl-job-board.js:*${RESET}`);
       console.log(`                     ${GREEN}✓${RESET} Ephemeral Temp:    ${CYAN}node .claude/plugins/job-search-automations/scripts/cleanup-tmp.js:*${RESET} (cleanup-tmp helper)`);
       console.log(`                     ${GREEN}✓${RESET} MCP Database:      ${CYAN}Operational tools pre-approved (least privilege)${RESET}`);
-      console.log(`                     ${GREEN}✓${RESET} Web Access:        ${CYAN}WebSearch${RESET}, ${CYAN}WebFetch${RESET} (fallback discovery)`);
+      console.log(`                     ${GREEN}✓${RESET} Web Access:        ${CYAN}WebFetch${RESET} scoped to known ATS domains only — everything else still asks for confirmation`);
     }
   }
   if (isCopilotTarget) {
@@ -1038,25 +967,11 @@ async function handleSetup(args) {
     console.log(`  Standard MCP:      ${BOLD}${path.join(projectDir, '.mcp.json')}${RESET}`);
     console.log(`  Agent Skills:      ${BOLD}${agentsSkillsDir}${RESET}`);
   }
-  console.log(`\n${CYAN}${BOLD}Recurring Pipeline Runs:${RESET}`);
-  console.log(`  Use the /schedule command or harness routine settings to automate runs:`);
-  console.log(`  /schedule CronExpression="0 9 * * 1-5" Prompt="Run job-search-lead-gen for a batch of 3 companies in directory '${projectDir}'. Complete within 50 messages."`);
-  console.log(`\n  ${BOLD}Model Class Recommendation:${RESET}`);
-  if (isClaudeTarget) {
-    console.log(`    • Claude Code / Desktop: Recommend Sonnet-class (cost-effective, balanced)`);
-  }
-  if (isCodexTarget) {
-    console.log(`    • OpenAI / Codex:        Recommend Luna-class (fast, low token cost)`);
-  }
-  if (isCopilotTarget) {
-    console.log(`    • GitHub Copilot:        Recommend Claude 3.5 Sonnet or GPT-4o-mini`);
-  }
-  if (!isClaudeTarget && !isCodexTarget && !isCopilotTarget) {
-    console.log(`    • OpenAI / Codex:        Recommend Luna-class (fast, low token cost)`);
-    console.log(`    • Claude Code / Desktop: Recommend Sonnet-class (cost-effective, balanced)`);
-    console.log(`    • Standard Harnesses:    Recommend balanced tier models`);
-  }
-  console.log(`    (Avoid defaulting unattended recurring routines to expensive flagship models like Opus)`);
+  console.log(`\n${CYAN}${BOLD}Ready to use, on demand:${RESET}`);
+  console.log(`  Ask your assistant to run a search, e.g. "run company-search" or "run job-search-lead-gen for <company>".`);
+  console.log(`  Recurring/scheduled runs (via /schedule or harness routine settings) are optional — see`);
+  console.log(`  the README or installation-steps.md if you want to set that up, including the Auto vs.`);
+  console.log(`  Manual approval tradeoff for scheduled routines.`);
 
   if (isCopilotTarget) {
     console.log(`\nPlease reload your VS Code window (Cmd+Shift+P -> 'Developer: Reload Window') for Copilot to load skills and MCP tools.`);

@@ -256,11 +256,11 @@ else
   fail "setup.sh missing /schedule post-install instructions"
 fi
 
-if grep -qi "Sonnet-class" "$PLUGIN_ROOT/setup.sh" && \
-   grep -qi "Luna-class" "$PLUGIN_ROOT/setup.sh"; then
-  pass "setup.sh post-install banner includes Sonnet-class and Luna-class model recommendations"
+if grep -qi "on demand" "$PLUGIN_ROOT/setup.sh" && \
+   grep -qi "optional" "$PLUGIN_ROOT/setup.sh"; then
+  pass "setup.sh post-install banner presents on-demand usage as default and scheduling as optional"
 else
-  fail "setup.sh missing model class recommendations in post-install banner"
+  fail "setup.sh post-install banner missing on-demand-first framing"
 fi
 
 # Check README.md post-install cron documentation
@@ -296,11 +296,19 @@ else
   fail "installation-steps.md missing Weekly Digest anti-hallucination guardrail"
 fi
 
-if grep -qi "Auto Approval" "$PLUGIN_ROOT/installation-steps.md" && \
-   grep -q 'permissionMode: "auto"' "$PLUGIN_ROOT/installation-steps.md"; then
-  pass "installation-steps.md mandates Auto approval mode for canonical routines"
+if grep -q 'permissionMode: "auto"' "$PLUGIN_ROOT/installation-steps.md" && \
+   grep -qi "your decision" "$PLUGIN_ROOT/installation-steps.md" && \
+   ! grep -qi "Mandatory Auto Approval" "$PLUGIN_ROOT/installation-steps.md"; then
+  pass "installation-steps.md presents Auto vs. Manual approval as the user's own decision, not a mandate"
 else
-  fail "installation-steps.md missing Auto approval mode instructions"
+  fail "installation-steps.md missing the opt-in Auto/Manual approval framing, or still mandates Auto"
+fi
+
+if grep -qi "on-demand" "$PLUGIN_ROOT/installation-steps.md" && \
+   grep -qi "Step 3 (Optional)" "$PLUGIN_ROOT/installation-steps.md"; then
+  pass "installation-steps.md presents scheduling as an optional feature, not a required setup step"
+else
+  fail "installation-steps.md does not clearly present scheduling as opt-in"
 fi
 
 if grep -qi "Sonnet-class" "$PLUGIN_ROOT/installation-steps.md" && \
@@ -333,11 +341,19 @@ else
   fail "CLAUDE.md missing explicit runtime file layout rules (PRO-31)"
 fi
 
-if grep -qi "Mandatory Auto Approval for Routines" "$PLUGIN_ROOT/CLAUDE.md" && \
-   grep -q 'permissionMode: "auto"' "$PLUGIN_ROOT/CLAUDE.md"; then
-  pass "CLAUDE.md mandates Auto approval mode for scheduled routines"
+if grep -q 'permissionMode: "auto"' "$PLUGIN_ROOT/CLAUDE.md" && \
+   grep -qi "user's call, not the agent's" "$PLUGIN_ROOT/CLAUDE.md" && \
+   ! grep -qi "Mandatory Auto Approval" "$PLUGIN_ROOT/CLAUDE.md"; then
+  pass "CLAUDE.md presents Auto vs. Manual approval as the user's own decision, not a mandate"
 else
-  fail "CLAUDE.md missing Auto approval mode instructions"
+  fail "CLAUDE.md missing the opt-in Auto/Manual approval framing, or still mandates Auto"
+fi
+
+if grep -qi "opt-in only" "$PLUGIN_ROOT/CLAUDE.md" && \
+   grep -qi "do not offer or configure them" "$PLUGIN_ROOT/CLAUDE.md"; then
+  pass "CLAUDE.md presents scheduled routines as opt-in, not offered proactively"
+else
+  fail "CLAUDE.md does not clearly present scheduled routines as opt-in"
 fi
 
 if grep -qi "Sonnet-class" "$PLUGIN_ROOT/CLAUDE.md"; then

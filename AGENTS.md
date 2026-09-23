@@ -24,10 +24,9 @@ This document defines runtime behavior, architecture, and constraints for **Code
 
 When a user in Codex Desktop, Codex CLI, or ChatGPT Codex task asks to install, set up, or get started with Job Search Automation:
 
-1. **Keep it simple and frictionless**:
-   - Do **NOT** debate marketplace mechanisms vs. local scripts.
+1. **Keep it simple, but don't suppress relevant caveats**:
    - Do **NOT** run `git clone`. The repository must NEVER be cloned into the user's workspace.
-   - Data persists permanently in `<selected-directory>/.job-search/` (containing `job-search.sqlite`, `resume.pdf`, and `config.json`).
+   - Data in `<selected-directory>/.job-search/` (containing `job-search.sqlite`, `resume.pdf`, and `config.json`) persists as long as that directory itself does. If you're running in an ephemeral or sandboxed environment that isn't backed by persistent storage, say so rather than assuming permanence.
    - Do **NOT** ask about Neon database strings or storage modes unless the user explicitly requests Neon cloud mode. Local SQLite mode is the default zero-dependency mode.
    - Do **NOT** attempt to install Playwright or Chromium. The crawler runs zero-browser lightweight fetch with ATS APIs.
    - For universal, multi-harness installation flags and details, refer to [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md).
@@ -56,8 +55,8 @@ When a user in Codex Desktop, Codex CLI, or ChatGPT Codex task asks to install, 
 4. **Conversational Next Step**:
    - Once setup reports completion, ask the user:
      > *"Your job search pipeline is ready! What job titles, locations, or target companies would you like to start with?"*
-   - Save their preferences and offer to run their first search using `company-search` or `job-search-lead-gen`.
-   - If asked to set up routines or recurring schedules, follow the **Canonical Routines** defined below and in [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md). **NEVER create a "Weekly digest" routine.**
+   - Save their preferences and offer to run their first search **on demand** using `company-search` or `job-search-lead-gen` — this is the default, primary way to use the pipeline.
+   - Only if the user explicitly asks to automate this on a recurring schedule, offer the **Canonical Routines** defined below and in [installation-steps.md](file:///Users/joshyim/projects/agent-automations/job-search-automations/installation-steps.md), and be upfront that they run unattended. **NEVER create a "Weekly digest" routine.**
 
 ---
 
@@ -100,14 +99,16 @@ The Job Search Automation workspace operates on a clean separation of three comp
    - If intermediate crawl data must be staged, write strictly to `<selected-directory>/.job-search/tmp/<company-slug>-crawl.json`.
    - **NEVER** create directories or write files in the project workspace or repo root. Never create nested subdirectories inside `.job-search/tmp/`.
    - Both `job-search-crawl` and `job-search-assess` must clean up any temporary files upon run completion.
-5. **Scheduled & Unattended Execution Guidelines (Cost & Scoping Control)**:
-   - **Message Budget**: State an explicit message budget in prompts: *"Complete within 40–50 messages. If more companies or pending postings remain, stop and let the next scheduled run continue."*
+5. **Bounded Batch Execution Guidelines (Cost & Scoping Control)**:
+   - These bounds apply whether a run is triggered on-demand by a human or (only if the user has
+     explicitly opted into it) by a scheduled task.
+   - **Message Budget**: State an explicit message budget in prompts: *"Complete within 40–50 messages. If more companies or pending postings remain, stop rather than continuing indefinitely."*
    - **Batch Limits**:
-     - Crawl: Process at most 2–3 companies per scheduled run (`get_batch({ limit: 3 })`).
-     - Assess: Process at most 5 pending postings per scheduled run (`get_pending_queue`).
+     - Crawl: Process at most 2–3 companies per run (`get_batch({ limit: 3 })`).
+     - Assess: Process at most 5 pending postings per run (`get_pending_queue`).
      - Company Discovery (`company-search`): Add at most 3–5 newly qualified companies per run.
      - Title Discovery (`title-discovery`): Add at most 1–3 new validated title patterns per run.
-   - **Zero Browser Automation & ATS Fallback**: Never invoke interactive browser tools during unattended runs. Stick strictly to lightweight HTTP / ATS APIs and simple WebFetch. For Ashby or other ATS SPAs, use the crawler in posting mode (`crawl-job-board.js --posting`) which resolves complete job text via public APIs.
+   - **Zero Browser Automation & ATS Fallback**: Never invoke interactive browser tools during a bounded batch run. Stick strictly to lightweight HTTP / ATS APIs and simple WebFetch. For Ashby or other ATS SPAs, use the crawler in posting mode (`crawl-job-board.js --posting`) which resolves complete job text via public APIs.
      - **Known ATS Public APIs**:
        - **Ashby**: Prefer unauthenticated public board API `https://api.ashbyhq.com/posting-api/job-board/<boardSlug>`. For individual postings, query the board endpoint or use `crawl-job-board.js "<url>" --posting --json`. **CRITICAL**: Never call `https://api.ashbyhq.com/posting-api/job/{id}` directly; that endpoint requires API authentication and will fail with `HTTP 401 Unauthorized`.
        - **Greenhouse**: Use public board API `https://boards-api.greenhouse.io/v1/boards/<boardToken>/jobs` and posting API `https://boards-api.greenhouse.io/v1/boards/<boardToken>/jobs/<jobId>`.
@@ -179,9 +180,12 @@ Located in `.agents/skills/` (and `.codex/plugins/job-search-automations/skills/
 
 ---
 
-## Canonical Routines & Recurring Scheduling
+## Canonical Routines & Recurring Scheduling (opt-in only)
 
-When asked to configure routines or recurring background jobs, configure ONLY the four canonical routines below:
+The default, primary way to use this pipeline is on-demand. Recurring/scheduled routines are an
+**optional feature** the user may ask for — do not offer or configure them proactively. If, and
+only if, the user explicitly asks to automate this on a schedule, configure ONLY the four
+canonical routines below:
 
 1. **Daily Company Search** (`company-search`):
    - Schedule: Daily 8:00 PM (`0 20 * * *`)

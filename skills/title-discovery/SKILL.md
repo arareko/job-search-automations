@@ -74,12 +74,13 @@ Output:
 - Titles considered but already covered.
 - Titles evaluated but not added (with reasons).
 
-## Unattended & Scheduled Execution Guidelines
+## Bounded Batch Execution Guidelines
 
-When executed as an automated routine or scheduled task (e.g., Daily Job Title Search):
+These bounds apply to any run of this skill — on-demand or, if the user has explicitly opted
+into it, as a scheduled routine (e.g., Daily Job Title Search):
 - **Message Budget**: Complete within 25–35 messages.
-- **Batch Limits**: Add at most 1–3 new validated include or exclude patterns via `add_title_pattern` per scheduled run to keep pattern definitions clean and focused.
-- **Zero Browser Automation**: Never invoke interactive browser tools (`Claude_Browser`, browser preview tabs, Puppeteer) during unattended runs. Stick strictly to lightweight HTTP fetch and `WebSearch` / `WebFetch`.
+- **Batch Limits**: Add at most 1–3 new validated include or exclude patterns via `add_title_pattern` per run to keep pattern definitions clean and focused.
+- **Zero Browser Automation**: Never invoke interactive browser tools (`Claude_Browser`, browser preview tabs, Puppeteer) during a bounded batch run. Stick strictly to lightweight HTTP fetch and `WebSearch` / `WebFetch`.
 - **Fast-Fail External Sources**: If a job board or query source is unreachable or blocked, log a warning and advance immediately. Never retry in loops.
 
 ## Rules

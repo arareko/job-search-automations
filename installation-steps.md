@@ -96,7 +96,10 @@ Setup automatically establishes a clean, self-contained architecture inside your
    - **Claude**: Skills discovered from `.claude/plugins/job-search-automations/skills/` and guided by `CLAUDE.md`.
 5. **Desktop & Agent Configuration (Claude Only)**:
    - `<workspace>/.claude/launch.json`: Claude Desktop web preview entry for the local UI dashboard.
-   - `<workspace>/.claude/settings.json`: Pre-configures `"defaultMode": "auto"` and pre-grants permissions for unattended runs.
+   - `<workspace>/.claude/settings.json`: Grants permissions scoped to the `.job-search/` workspace
+     and the known ATS APIs the crawler uses. Everything else (including any recurring schedule
+     you set up later) still goes through normal per-action confirmation unless you explicitly
+     choose otherwise.
 
 > **LLM Execution Directive:**
 > When the user asks to install the plugin, detect your active host harness:
@@ -156,17 +159,27 @@ Verify that the 6 skills are registered:
 
 ---
 
-## Step 3: Canonical Routines Activation & Auto Permissions
+## Step 3 (Optional): Recurring Routines & Scheduling
 
-Recurring routines automate discovery, crawling, and assessment on an unattended daily cadence.
+The default, primary way to use this pipeline is **on-demand**: you ask your agent to run a
+search, crawl, or assessment, and it runs under normal per-action confirmation. This step is only
+for users who explicitly want to automate that on a recurring schedule — it is not part of the
+required setup flow, and an agent should not configure it unless you ask.
 
 > [!CRITICAL]
 > **Strict Anti-Hallucination Guardrail: No "Weekly Digest" Routine**
 > There is **NO Weekly Digest routine** in this repository. Agents must never create, suggest, or schedule a weekly digest. Only configure the 4 canonical routines defined below.
 
 > [!IMPORTANT]
-> **Mandatory Auto Approval for Canonical Routines**
-> All 4 canonical routines run unattended in the background. They must always be configured with **Auto** approval (`permissionMode: "auto"`). In Claude Desktop under **Scheduled**, routines should display as `[Schedule] · Auto` (e.g., `6:00 AM every day · Auto`). Never leave them in "Manual" approval mode, as unapproved prompts will stall unattended execution.
+> **Auto vs. Manual approval is your decision**
+> Scheduled routines run without further intervention once started. If you configure them with
+> **Auto** approval (`permissionMode: "auto"`), they'll act without per-step confirmation — that's
+> what makes "unattended" possible, but it also means a misled or compromised run has more room to
+> act before you'd notice. If you leave them in **Manual** approval, each step will prompt you,
+> which in practice means the routine won't complete unattended. Pick the mode deliberately for
+> your own risk tolerance; an agent should explain this tradeoff rather than silently defaulting
+> to Auto on your behalf, and should never modify `scheduled-tasks.json` or any Claude
+> configuration outside your current project without telling you.
 
 > [!TIP]
 > **Recommended Model Classes for Routines**
@@ -285,12 +298,17 @@ This section outlines the exact conversational workflow and operational protocol
 
 ---
 
-## Step 5: Execute Initial Manual Run & Verify Settings
+## Step 5: Execute Initial On-Demand Run & Verify Settings
 
-Before letting unattended recurring routines take over, the AI assistant should conduct an initial test crawl and evaluation pass:
+This is how the pipeline is meant to be used day to day: a human asks for a run, and the agent
+executes it under normal confirmation. Conduct an initial test crawl and evaluation pass to
+verify everything is wired up correctly:
 
 1. **Permission Check**:
-   - **Claude Code**: Ensure permission mode is set to **auto** (`permissionMode: "auto"` or run `/permissions`) so the crawler script and MCP database tools execute smoothly without waiting for confirmation on every single step.
+   - **Claude Code**: The setup step already scoped permissions to the `.job-search/` workspace
+     and the known ATS APIs, so the crawler script and MCP database tools run without repeated
+     prompts for those specific operations — everything else still asks for confirmation as
+     normal. Run `/permissions` if you want to review or adjust the scope yourself.
    - **GitHub Copilot / Codex**: Confirm tool approvals are granted for database queries and crawling.
 2. **Run Pipeline Pass**:
    - Trigger a bounded test crawl for 1 target company using `job-search-lead-gen`:

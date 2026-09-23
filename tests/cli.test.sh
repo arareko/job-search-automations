@@ -200,7 +200,7 @@ if (hasStart && hasPrefix && portMatch) {
 }
 ")"
 assert_equals "VALID" "$CLI_LAUNCH_VALID" ".claude/launch.json uses start script and relative prefix"
-assert_file_exists "$PROJECT_DIR/.claude/settings.json" ".claude/settings.json created for unattended runs"
+assert_file_exists "$PROJECT_DIR/.claude/settings.json" ".claude/settings.json created for on-demand runs"
 
 # .job-search/ workspace verification
 assert_dir_exists "$PROJECT_DIR/.job-search" ".job-search/ workspace created"
@@ -210,8 +210,9 @@ assert_file_exists "$PROJECT_DIR/.job-search/config.json" "config.json created"
 assert_file_exists "$PROJECT_DIR/.job-search/.gitignore" ".job-search/.gitignore created"
 assert_dir_exists "$PROJECT_DIR/.job-search/tmp" ".job-search/tmp/ directory created (PRO-32)"
 
+# Verify scoped, on-demand permissions in .claude/settings.json
 CLI_SETTINGS="$(cat "$PROJECT_DIR/.claude/settings.json")"
-assert_contains "$CLI_SETTINGS" '"defaultMode": "auto"' ".claude/settings.json contains permissions.defaultMode = auto"
+assert_not_contains "$CLI_SETTINGS" '"defaultMode": "auto"' ".claude/settings.json does not force permissions.defaultMode = auto"
 assert_contains "$CLI_SETTINGS" "cleanup-tmp.js:*" ".claude/settings.json contains cleanup-tmp execution grant (PRO-55)"
 assert_not_contains "$CLI_SETTINGS" "Bash(mkdir -p .job-search/tmp*)" ".claude/settings.json omits wildcard mkdir permission (PRO-55)"
 assert_not_contains "$CLI_SETTINGS" "Bash(rm -rf ./.job-search/tmp*)" ".claude/settings.json omits wildcard rm -rf permission (PRO-55)"
@@ -224,7 +225,7 @@ assert_contains "$CLI_SETTINGS" "scripts/crawl-job-board.js:*" ".claude/settings
 assert_not_contains "$CLI_SETTINGS" "Bash(mkdir -p $PROJECT_DIR/.job-search/tmp*)" ".claude/settings.json omits absolute tmp mkdir grant (PRO-55)"
 assert_not_contains "$CLI_SETTINGS" "Bash(rm -rf $PROJECT_DIR/.job-search/tmp*)" ".claude/settings.json omits absolute tmp rm grant (PRO-55)"
 assert_contains "$CLI_SETTINGS" "Read($PROJECT_DIR/**)" ".claude/settings.json contains scoped workspace Read grant (PRO-34)"
-assert_not_contains "$CLI_SETTINGS" "Write($PROJECT_DIR/**)" ".claude/settings.json omits overbroad workspace Write grant (PRO-55)"
+assert_not_contains "$CLI_SETTINGS" "Write($PROJECT_DIR/**)" ".claude/settings.json does not grant whole-project Write (sandbox hardening)"
 assert_contains "$CLI_SETTINGS" "Read($PROJECT_DIR/.job-search/**)" ".claude/settings.json contains scoped .job-search Read grant (PRO-34)"
 assert_contains "$CLI_SETTINGS" "Write($PROJECT_DIR/.job-search/**)" ".claude/settings.json contains scoped .job-search Write grant (PRO-34)"
 assert_not_contains "$CLI_SETTINGS" "mcp__job-search-db__*" ".claude/settings.json omits overbroad mcp wildcard grant (PRO-55)"
@@ -232,10 +233,11 @@ assert_not_contains "$CLI_SETTINGS" "mcp__job-search-db__delete_rubric_dimension
 assert_contains "$CLI_SETTINGS" "mcp__job-search-db__get_pending_queue" ".claude/settings.json contains mcp queue grant (PRO-34)"
 assert_contains "$CLI_SETTINGS" "mcp__job-search-db__list_companies" ".claude/settings.json contains mcp companies grant (PRO-34)"
 assert_contains "$CLI_SETTINGS" "mcp__job-search-db__select_workspace" ".claude/settings.json contains mcp select_workspace grant (PRO-55)"
-assert_contains "$CLI_SETTINGS" "WebSearch" ".claude/settings.json contains WebSearch grant (PRO-34)"
-assert_contains "$CLI_SETTINGS" "WebFetch" ".claude/settings.json contains WebFetch grant (PRO-34)"
+assert_not_contains "$CLI_SETTINGS" "WebSearch" ".claude/settings.json does not pre-grant unrestricted WebSearch (sandbox hardening)"
+assert_not_contains "$CLI_SETTINGS" "WebFetch(*)" ".claude/settings.json does not pre-grant unrestricted WebFetch(*) (sandbox hardening)"
+assert_contains "$CLI_SETTINGS" "WebFetch(domain:boards-api.greenhouse.io)" ".claude/settings.json contains scoped ATS WebFetch grant (sandbox hardening)"
 
-# PRO-34 post-install transparent permissions summary assertions
+# Post-install transparent permissions summary assertions
 assert_contains "$SETUP_OUT" "Permissions:" "CLI outputs Permissions in summary (PRO-34)"
 assert_contains "$SETUP_OUT" "Scoped Read/Write:" "CLI details Scoped Read/Write grant in summary (PRO-34)"
 assert_contains "$SETUP_OUT" "Crawler Script:" "CLI details Crawler Script grant in summary (PRO-34)"
@@ -445,7 +447,7 @@ CODEX_SETUP_OUT="$("$ROOT_DIR/bin/cli.js" setup --directory "$CODEX_PROJECT_DIR"
 assert_contains "$CODEX_SETUP_OUT" "Setup Complete!" "Codex setup reported completion"
 assert_contains "$CODEX_SETUP_OUT" "Codex Config:" "Codex config displayed in summary"
 assert_contains "$CODEX_SETUP_OUT" ".codex/config.toml" "Codex summary reports .codex/config.toml"
-assert_contains "$CODEX_SETUP_OUT" "Luna-class" "Codex summary recommends Luna-class models"
+assert_contains "$CODEX_SETUP_OUT" "on demand" "Codex summary presents on-demand usage as the default"
 assert_contains "$CODEX_SETUP_OUT" 'default_tools_approval_mode = "writes"' "Codex summary states approval mode"
 assert_contains "$CODEX_SETUP_OUT" "/mcp" "Codex summary directs inspecting /mcp"
 
